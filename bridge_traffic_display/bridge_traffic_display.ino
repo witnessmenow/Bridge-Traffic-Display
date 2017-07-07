@@ -59,6 +59,10 @@
 // The name of the config file stored on SPIFFS, it will create this if it doesn't exist
 #define BRIDGE_CONFIG_FILE "bridge.config"
 
+#define GREEN_COLOUR_INDEX 0
+#define YELLOW_COLOUR_INDEX 1
+#define RED_COLOUR_INDEX 2
+
 // ----------------------------
 // Change the following to adapt for you
 // ----------------------------
@@ -89,6 +93,8 @@ char apiKey[45] = "";
 
 //Free Google Maps Api only allows for 2500 "elements" a day
 unsigned long delayBetweenApiCalls = 1000 * 60; // 1 mins
+
+unsigned long delayBetweenLedChange = 1000 * 10; // 10 seconds
 
 
 //Where journey should start and end
@@ -124,7 +130,11 @@ GoogleMapsApi *mapsApi;
 
 unsigned long api_due_time = 0;
 
+unsigned long led_due_time = 0;
+
 uint32_t colour;
+
+int colourIndex = 0;
 
 // flag for saving data
 bool shouldSaveConfig = false;
@@ -191,7 +201,6 @@ void setup() {
   Serial.println(ip);
   timeClient.begin();
   drd.stop();
-
 }
 
 bool loadConfig() {
@@ -245,12 +254,15 @@ uint32_t getColour(int durationTraffic_value, int duration_value) {
 
   if(difference > BAD_TRAFFIC_THRESHOLD) {
     Serial.println("Setitng Colour to red");
+    colourIndex = RED_COLOUR_INDEX;
     return leds.Color(0, 255, 0); // Red
   } else if ( difference > MEDIUM_TRAFFIC_THRESHOLD ) {
     Serial.println("Setitng Colour to yellow");
+    colourIndex = YELLOW_COLOUR_INDEX;
     return leds.Color(60, 180, 0); // Yellow
   }
   Serial.println("Setitng Colour to Green");
+  colourIndex = GREEN_COLOUR_INDEX;
   return leds.Color(255, 0, 0); //Green
 }
 
@@ -261,11 +273,17 @@ void unLightAllLeds() {
   leds.show();
 }
 
-void lightLeds() {
+void setAllLeds(uint32_t col) {
+  for(int i=0; i< NUMBER_OF_LEDS; i++) {
+    leds.setPixelColor(i, col);
+  }
+}
+
+void lightLeds(uint32_t col) {
   unLightAllLeds();
   for (int j = 1; j <= NUMBER_OF_LEDS; j++) {
     for (int i = 0; i < j; i++) {
-      leds.setPixelColor(i, colour);
+      leds.setPixelColor(i, col);
     }
     leds.show();
     delay(100);
@@ -277,6 +295,54 @@ void lightLeds() {
   // when it refreshed. We may need to change this based on how the LEDS are wired.
   // comment out leds.show() and the delay from above and uncomment the line below to remove that feature
   //leds.show()
+}
+
+void lightLedsForwards(uint32_t newColour, uint32_t oldColour){
+  for (int j = 1; j <= NUMBER_OF_LEDS; j++) {
+    setAllLeds(oldColour);
+    for (int i = 0; i < j; i++) {
+      leds.setPixelColor(i, newColour);
+    }
+    leds.show();
+    delay(200);
+  }
+}
+
+void lightLedsBackwards(uint32_t newColour, uint32_t oldColour){
+  for (int j = NUMBER_OF_LEDS - 1; j > 0 ; j--) {
+    setAllLeds(oldColour);
+    for (int i = NUMBER_OF_LEDS - 1; i >= j; i--) {
+      leds.setPixelColor(i, newColour);
+    }
+    leds.show();
+    delay(200);
+  }
+}
+
+void twinkleLed(){
+  uint32_t lighterColour = leds.Color(0, 0, 0);
+  switch(colourIndex){
+    case GREEN_COLOUR_INDEX:
+      {
+        lighterColour = leds.Color(80, 0, 0);
+      }
+      break;
+    case YELLOW_COLOUR_INDEX:
+      {
+        lighterColour = leds.Color(15, 45, 0);
+      }
+      break;
+     
+    case RED_COLOUR_INDEX:
+      {
+        lighterColour = leds.Color(0, 80, 0);
+      }
+      break;
+  }
+
+  lightLedsForwards(lighterColour, colour);
+  delay(600);
+  lightLedsBackwards(colour, lighterColour);
 }
 
 bool checkGoogleMaps() {
@@ -325,8 +391,15 @@ void loop() {
   if (timeNow > api_due_time)  {
     Serial.println("Checking maps");
     if (checkGoogleMaps()) {
-      lightLeds();
+      lightLeds(colour);
     } 
     api_due_time = timeNow + delayBetweenApiCalls;
+    led_due_time = timeNow + delayBetweenLedChange;
+  }
+  timeNow = millis();
+  if (timeNow > led_due_time)  {
+    Serial.println("Chaning LED");
+    twinkleLed();
+    led_due_time = timeNow + delayBetweenLedChange;
   }
 }
